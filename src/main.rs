@@ -64,25 +64,34 @@ async fn handle_connection(stream: tokio::net::TcpStream, id: Uuid,mut terminal:
     write.send(message).await?;
     let mut output_buffer = [0u8; 1024];
 
+    // run reader thread
+    tokio::spawn(async move {
+        while let Ok(n) = terminal.termout.as_mut().unwrap().read(&mut output_buffer) {
+            if n > 0 {
+                let message = Message::Text(String::from_utf8(output_buffer[0..n].to_vec()).unwrap().into());
+                print!("{}", message);
+                write.send(message).await.unwrap();
+            }
+        }
+    });
+
     while let Some(msg) = read.next().await {
         match msg {
             Ok(message) => {
                 if message.is_text() || message.is_binary() {
-                    println!("Received message: {} from {}", message, id);
+                    // println!("Received message: {} from {}", message, id);
                     let msg = message.to_string() + "\n";
                     terminal
                         .termin
                         .as_mut()
                         .unwrap()
                         .write_all(msg.to_string().as_bytes()).unwrap();
-                    let bytes_read = terminal
-                                                .termout
-                                                .as_mut()
-                                                .unwrap()
-                                                .read(&mut output_buffer)?;
-                    let message = Message::Text(String::from_utf8((&output_buffer[..bytes_read]).to_vec()).unwrap().to_string().into());
-                    write.send(message).await?;
-                    output_buffer = [0u8; 1024];
+                    let msg = "echo '<---done--->\\n'\n";
+                    terminal
+                        .termin
+                        .as_mut()
+                        .unwrap()
+                        .write_all(msg.to_string().as_bytes()).unwrap();
                 } else if message.is_close() {
                     println!("Client disconnected: {}", id);
                     break;
