@@ -5,7 +5,7 @@ use futures_util::{StreamExt, SinkExt};
 use std::io;
 use pseudoterminal::{CommandExt, Terminal};
 use std::io::{stdin, stdout, Read, Write};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 // use std::process::Command;
@@ -27,7 +27,11 @@ async fn main() -> io::Result<()> {
 
                 tokio::spawn(async move {
                     let id = Uuid::new_v4();
-                    let mut process = Command::new("zsh");
+                    let mut binding = Command::new("sh");
+                    let mut process = binding.
+                                            stdin(Stdio::piped())
+                                            .stdout(Stdio::piped())
+                                            .stderr(Stdio::piped());
                     let mut terminal = process.spawn_terminal().unwrap();
                     {
                         // Lock the Mutex to modify the shared data
@@ -81,12 +85,6 @@ async fn handle_connection(stream: tokio::net::TcpStream, id: Uuid,mut terminal:
                 if message.is_text() || message.is_binary() {
                     // println!("Received message: {} from {}", message, id);
                     let msg = message.to_string() + "\n";
-                    terminal
-                        .termin
-                        .as_mut()
-                        .unwrap()
-                        .write_all(msg.to_string().as_bytes()).unwrap();
-                    let msg = "echo '<---done--->\\n'\n";
                     terminal
                         .termin
                         .as_mut()
