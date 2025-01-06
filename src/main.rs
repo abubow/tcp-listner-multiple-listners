@@ -3,6 +3,9 @@ use tokio_tungstenite::accept_async;
 use tungstenite::protocol::Message;
 use futures_util::{StreamExt, SinkExt};
 use std::io;
+use pseudoterminal::{CommandExt, Terminal};
+use std::io::{stdin, stdout, Read, Write};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 // use std::process::Command;
@@ -21,14 +24,17 @@ async fn main() -> io::Result<()> {
                 println!("New connection established");
                 let running_processes = Arc::clone(&running_processes);
 
+
                 tokio::spawn(async move {
                     let id = Uuid::new_v4();
+                    let mut process = Command::new("zsh");
+                    let mut terminal = process.spawn_terminal().unwrap();
                     {
                         // Lock the Mutex to modify the shared data
                         let mut processes = running_processes.lock().unwrap();
                         processes.push(id);
                     }
-                    if let Err(e) = handle_connection(stream, id).await {
+                    if let Err(e) = handle_connection(stream, id, terminal).await {
                         eprintln!("Connection error: {}", e);
                     }
                 });
@@ -47,7 +53,7 @@ async fn main() -> io::Result<()> {
         println!("Active connections: {}", active_connections);
     }
 }
-async fn handle_connection(stream: tokio::net::TcpStream, id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_connection(stream: tokio::net::TcpStream, id: Uuid,mut terminal: Terminal) -> Result<(), Box<dyn std::error::Error>> {
     let ws_stream = accept_async(stream).await?;
     println!("New WebSocket connection established: {}", id);
 
@@ -56,15 +62,27 @@ async fn handle_connection(stream: tokio::net::TcpStream, id: Uuid) -> Result<()
     // Send a welcome message to the client
     let message = Message::text("id: ".to_string() + &id.to_string());
     write.send(message).await?;
+    let mut output_buffer = [0u8; 1024];
 
     while let Some(msg) = read.next().await {
         match msg {
             Ok(message) => {
                 if message.is_text() || message.is_binary() {
                     println!("Received message: {} from {}", message, id);
-
-                    // Echo the message back
+                    let msg = message.to_string() + "\n";
+                    terminal
+                        .termin
+                        .as_mut()
+                        .unwrap()
+                        .write_all(msg.to_string().as_bytes()).unwrap();
+                    let bytes_read = terminal
+                                                .termout
+                                                .as_mut()
+                                                .unwrap()
+                                                .read(&mut output_buffer)?;
+                    let message = Message::Text(String::from_utf8((&output_buffer[..bytes_read]).to_vec()).unwrap().to_string().into());
                     write.send(message).await?;
+                    output_buffer = [0u8; 1024];
                 } else if message.is_close() {
                     println!("Client disconnected: {}", id);
                     break;
